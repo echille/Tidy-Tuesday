@@ -65,6 +65,7 @@ str(unique(african_names_LL$Long)) #Check that there are five longitudes
 port_disembark <- african_names_LL[,c(3,9:10,13)]
 port_disembark <- port_disembark %>% group_by(port_disembark) %>% mutate(Pop=n()) %>% select(-name) 
 port_disembark <- port_disembark[!duplicated(port_disembark), ]
+print(port_disembark)
 ```
 
 Make the map!
