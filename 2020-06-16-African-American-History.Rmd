@@ -1,0 +1,81 @@
+---
+title: "African American History"
+author: "Erin Chille"
+date: "6/16/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The data related to this week's topic, african american history and Juneteenth, can be found (here)[https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-06-16/readme.md]
+
+## Load necessary packages
+```{r}
+library(maps)
+library(dplyr)
+library(tidyr)
+library(sf)
+library(ggplot2)
+library(viridis)
+```
+
+## Get the Data
+
+```{r, message=FALSE}
+blackpast <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-06-16/blackpast.csv')
+census <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-06-16/census.csv')
+slave_routes <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-06-16/slave_routes.csv')
+african_names <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-06-16/african_names.csv')
+```
+
+## We will be making a bubble map to explore the ports
+
+We want to do the ports that are fewer in number.
+```{r}
+str(african_names)
+african_names$port_embark <- as.factor(african_names$port_embark)
+african_names$port_disembark <- as.factor(african_names$port_disembark)
+levels(african_names$port_embark)
+levels(african_names$port_disembark)
+```
+
+There are 50-something port_embarks and only 5 port_disembarks, so we will be charting the port_disembark data.
+
+### Get Lat/Long data for our port_disembark data.
+```{r, warning=FALSE}
+african_names.orig <- african_names
+
+african_names$port_disembark <- gsub("Havana","23.1136,-82.3666",african_names$port_disembark) #Substitute town name for Lat,Long
+african_names$port_disembark <- gsub("St. Helena","-15.555999,-5.415999", african_names$port_disembark) #Substitute town name for Lat,Long
+african_names$port_disembark <- gsub("Bahamas unspecified","25.0443,-77.3504", african_names$port_disembark) #Substitute town name for Lat,Long
+african_names$port_disembark <- gsub("Freetown", "8.4657,-13.2317", african_names$port_disembark) #Substitute town name for Lat,Long
+african_names$port_disembark <- gsub("Kingston, Jamaica", "18.0179,-76.8099", african_names$port_disembark) #Substitute town name for Lat,Long
+african_names_LL <- separate(african_names, port_disembark, into = c("Lat", "Long"), sep=",") #Separate into two columns
+
+african_names_LL$port_disembark <- african_names.orig$port_disembark
+
+str(unique(african_names_LL$Lat)) #Check that there are five latitudes
+str(unique(african_names_LL$Long)) #Check that there are five longitudes
+```
+
+### Plot data
+```{r}
+port_disembark <- african_names_LL[,c(3,9:10,13)]
+port_disembark <- port_disembark %>% group_by(port_disembark) %>% mutate(Pop=n()) %>% select(-name) 
+port_disembark <- port_disembark[!duplicated(port_disembark), ]
+```
+
+Make the map!
+```{r}
+# ggplot() +
+#   geom_polygon(data = port_disembark, aes(x=Long, y = Lat, group = port_disembark), fill="grey", alpha=0.3) +
+#   geom_point( data=port_disembark, aes(x=Long, y=Lat, size=Pop, color=Pop)) +
+#   #scale_size_continuous(range=c(1,12)) +
+#   #scale_color_viridis(trans="log") +
+#   #theme_void() + 
+#   #ylim(50,59) + 
+#   coord_map() 
+```
+
