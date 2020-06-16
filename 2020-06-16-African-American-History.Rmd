@@ -1,18 +1,18 @@
 ---
-title: "African American History"
+title: "Tidy Tuesday Week 25: African American History"
 author: "Erin Chille"
 date: "6/16/2020"
-output: html_document
+output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-The data related to this week's topic, african american history and Juneteenth, can be found (here)[https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-06-16/readme.md]
+The data related to this week's topic, african american history and Juneteenth, can be found [here](https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-06-16/readme.md)
 
 ## Load necessary packages
-```{r}
+```{r, message=FALSE}
 library(maps)
 library(dplyr)
 library(tidyr)
@@ -34,7 +34,7 @@ african_names <- readr::read_csv('https://raw.githubusercontent.com/rfordatascie
 
 We want to do the ports that are fewer in number.
 ```{r}
-str(african_names)
+head(african_names)
 african_names$port_embark <- as.factor(african_names$port_embark)
 african_names$port_disembark <- as.factor(african_names$port_disembark)
 levels(african_names$port_embark)
