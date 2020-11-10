@@ -1,0 +1,230 @@
+---
+title: "Symbiosis Biomarker Expression"
+author: "Erin Chille"
+date: "Last updated: 2020/11/09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Set up workspace
+
+Remove prior objects and load necessary tools
+```{r, warning=FALSE, message=FALSE}
+rm(list=ls()) # removes all prior objects
+
+library("RColorBrewer")
+library("ggplot2")
+library("tidyverse")
+library("ggpubr")
+library("DESeq2")
+```
+
+
+Load sample Information
+```{r}
+sample.info <- read.csv(file="Sample_Info/RNAseq_data.csv", header=T, sep=",") #load sample info
+```
+
+Load gene count Information
+```{r}
+counts <- as.data.frame(read.csv("1-QC-Align-Assemble/Output/gene_count_matrix.csv", row.names="gene_id"), colClasses = double) #Load normalized expression matrix from stringtie
+```
+
+
+Keep only ambient treatmentinfo and count data
+```{r}
+dev <- c("AMB")
+treatmentinfo_dev <- filter(sample.info, treatment %in% dev)
+dim(treatmentinfo_dev) #rows should be 24
+
+gcount_dev <- counts[treatmentinfo_dev$sample_id]
+dim(gcount_dev) #columns should be 24
+```
+
+### Read normalization
+We are now going normalize our read counts using VST-normalization in DESeq2
+
+#### Construct the DESeq2 dataset
+
+Merge the treatment and time_point columns into a new column , group. Set group as a factor.
+```{r}
+treatmentinfo_dev$time_point <- factor(treatmentinfo_dev$time_point, levels = c("Unfertilized_egg", "Fertilized_egg", "Cleavage", "Prawn_chip", "Early_gastrula", "Mid_gastrula", "Late_gastrula", "Planula", "Adult"))
+```
+
+Create a DESeqDataSet design from gene count matrix and labels. Here we set the design to look at time_point to test for any differences in gene expression across timepoints.
+```{r}
+#Set DESeq2 design
+gdds_dev <- DESeqDataSetFromMatrix(countData = gcount_dev,
+                              colData = treatmentinfo_dev,
+                              design = ~time_point)
+```
+
+#### Log-transform the count data
+First we are going to log-transform the data using a variance stabilizing transforamtion (VST). This is only for visualization purposes. Essentially, this is roughly similar to putting the data on the log2 scale. It will deal with the sampling variability of low counts by calculating within-group variability (if blind=FALSE). Importantly, it does not use the design to remove variation in the data, and so can be used to examine if there may be any variability do to technical factors such as extraction batch effects.
+
+To do this we first need to calculate the size factors of our samples. This is a rough estimate of how many reads each sample contains compared to the others. In order to use VST (the faster log2 transforming process) to log-transform our data, the size factors need to be less than 4. Otherwise, there could be artefacts in our results.
+```{r}
+SF.gdds_dev <- estimateSizeFactors(gdds_dev) #estimate size factors to determine if we can use vst  to transform our data. Size factors should be less than for to use vst
+print(sizeFactors(SF.gdds_dev)) #View size factors
+```
+
+Our size factors are all less than 4, so we can use VST!
+```{r}
+gvst_dev <- vst(gdds_dev, blind=FALSE) #apply a variance stabilizing transforamtion to minimize effects of small counts and normalize wrt library size
+head(assay(gvst_dev), 3) #view transformed gene count data
+```
+
+
+## Searched GFF annot for genes associated with zooxanthellae and with glucose biosynthesis
+
+Find orthologues of biomarkers within Mcap genome
+```{r}
+#Genes associated with glucose metabolism (GO terms) “glucose metabolic process”
+#met <- c("adi2mcaRNA23963_R0", "g24226", "g27646", "g30302")
+
+#Glucose catabolic process
+#cat <- ("adi2mcaRNA32619_R0", "g64471")
+
+#Response to glucose
+#gluc <- c("g16598")
+
+targets <- data.frame(
+  association = c("glucose_metabolism", "glucose_metabolism", "glucose_metabolism", "glucose_metabolism", "glucose_catabolism", "glucose_catabolism", "response_to_glucose"),
+  gene_id = c("adi2mcaRNA23963_R0", "g24226", "g27646", "g30302", "adi2mcaRNA32619_R0", "g64471", "g16598")
+)
+```
+
+Subset results for genes of interest
+```{r}
+countsx <- as.data.frame(assay(gvst_dev))
+gene.counts <- countsx[(row.names(countsx) %in% targets$gene_id), ]
+#str(gene.counts)
+gene.counts$gene_id <- row.names(gene.counts) 
+gene.counts <- merge(gene.counts, targets, by="gene_id")
+
+gene.counts.long <- pivot_longer(gene.counts, 2:25, values_to = "exp")
+  #gather(gene.counts, group, exp, X1101:X375, factor_key=TRUE) 
+colnames(gene.counts.long)[3] <- "sample_id"
+gene.counts.long <- merge(gene.counts.long, sample.info[,c(1:2)], by="sample_id")
+#str(gene.counts.long)
+
+mean.counts <- gene.counts.long %>%
+  group_by(gene_id, time_point) %>%
+  summarise(mean = mean(exp),
+            sd=sd(exp))
+
+mean.counts$time_point <- factor(mean.counts$time_point, 
+                                 levels = c("Unfertilized_egg","Fertilized_egg","Cleavage", 
+                                  "Prawn_chip","Early_gastrula","Mid_gastrula", "Late_gastrula",
+                                  "Planula", "Adult"))
+mean.counts <- merge(mean.counts, targets, by= "gene_id")
+```
+
+```{r}
+met.counts <- subset(mean.counts, association =="glucose_metabolism")
+cat.counts <- subset(mean.counts, association =="glucose_catabolism")
+resp.counts <- subset(mean.counts, association =="response_to_glucose")
+```
+
+## Plot expression
+
+Glucose metabolism
+```{r}
+Mcap.met <- ggplot(met.counts, aes(x=time_point, y=mean, group=gene_id)) + 
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.1) +
+  geom_line(aes(shape=gene_id), lty="dashed", color = "darkgrey") +
+  geom_point(aes(shape=gene_id), size = 2, ) +
+  xlab("Timepoint") +
+ ylab(expression(paste("Mean expression (vst-transformed counts)"))) +
+  theme_bw() + #Set the background color
+  theme(axis.line = element_line(color = 'black'), #Set the axes color
+        panel.border = element_blank(), #Set the border
+        panel.grid.major = element_blank(), #Set the major gridlines
+        panel.grid.minor = element_blank(), #Set the minor gridlines
+        plot.background=element_blank(),  #Set the plot background
+        axis.title.x=element_text(size = 14), #set x-axis title size
+        axis.text.x=element_text(angle = 90, vjust = 0.5, hjust=1, size = 14), #set x-axis label size
+        axis.text.y=element_text(size = 14), #set x-axis label size
+        axis.title.y=element_text(size = 14), #set x-axis label size
+        axis.ticks.x=element_blank(), #No x-label ticks
+        legend.text=element_text(size = 12), #Legend text size
+        legend.position=c(0.3, 0.9)) +
+  guides(shape=guide_legend(nrow=3)) +
+  ggtitle("i) Genes with the 'Glucose Metabolic Process' GO Term") +
+  #facet_grid(rows=vars(gene_id), scales="free_y") +
+  theme(strip.text.y = element_text(size = 5)) +
+  theme(plot.title = element_text(face = 'bold.italic', 
+                                  size = 18, 
+                                  hjust = 0))
+Mcap.met
+```
+
+Glucose catabolism
+```{r}
+Mcap.cat <- ggplot(cat.counts, aes(x=time_point, y=mean, group=gene_id)) + 
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.1) +
+  geom_line(aes(shape=gene_id), lty="dashed", color = "darkgrey") +
+  geom_point(aes(shape=gene_id), size = 2, ) +
+  xlab("Timepoint") +
+  ylab(expression(paste("Mean expression (vst-transformed counts)"))) +
+  theme_bw() + #Set the background color
+  theme(axis.line = element_line(color = 'black'), #Set the axes color
+        panel.border = element_blank(), #Set the border
+        panel.grid.major = element_blank(), #Set the major gridlines
+        panel.grid.minor = element_blank(), #Set the minor gridlines
+        plot.background=element_blank(),  #Set the plot background
+        axis.title.x=element_text(size = 14), #set x-axis title size
+        axis.text.x=element_text(angle = 90, vjust = 0.5, hjust=1, size = 14), #set x-axis label size
+        axis.text.y=element_text(size = 14), #set x-axis label size
+        axis.title.y=element_blank(), #set x-axis label size
+        axis.ticks.x=element_blank(), #No x-label ticks
+        legend.text=element_text(size = 12), #Legend text size
+        legend.position = c(0.75, 0.9)) +
+  #guides(shape=guide_legend(ncol=2)) +
+  ggtitle("ii) Genes with the 'Glucose Catabolic Process' GO Term") +
+  #facet_grid(rows=vars(gene_id), scales="free_y") +
+  theme(strip.text.y = element_text(size = 5)) +
+  theme(plot.title = element_text(face = 'bold.italic',
+                                  size = 18,
+                                  hjust = 0))
+Mcap.cat
+```
+Response to glucose
+```{r}
+Mcap.resp <- ggplot(resp.counts, aes(x=time_point, y=mean, group=gene_id)) + 
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.1) +
+  geom_line(aes(shape=gene_id), lty="dashed", color = "darkgrey") +
+  geom_point(aes(shape=gene_id), size = 2, ) +
+  xlab("Timepoint") +
+  ylab(expression(paste("Mean expression (vst-transformed counts)"))) +
+  theme_bw() + #Set the background color
+  theme(axis.line = element_line(color = 'black'), #Set the axes color
+        panel.border = element_blank(), #Set the border
+        panel.grid.major = element_blank(), #Set the major gridlines
+        panel.grid.minor = element_blank(), #Set the minor gridlines
+        plot.background=element_blank(),  #Set the plot background
+        axis.title.x=element_text(size = 14), #set x-axis title size
+        axis.text.x=element_text(angle = 90, vjust = 0.5, hjust=1, size = 14), #set x-axis label size
+        axis.text.y=element_text(size = 14), #set x-axis label size
+        axis.title.y=element_blank(), #set x-axis label size
+        axis.ticks.x=element_blank(), #No x-label ticks
+        legend.text=element_text(size = 12), #Legend text size
+        legend.position = c(0.85, 0.9)) +
+  #guides(shape=guide_legend(ncol=2)) +
+  ggtitle("iii) Genes with the 'Response to Glucose' GO Term") +
+  #facet_grid(rows=vars(gene_id), scales="free_y") +
+  theme(strip.text.y = element_text(size = 5)) +
+  theme(plot.title = element_text(face = 'bold.italic',
+                                  size = 18,
+                                  hjust = 0))
+Mcap.resp
+```
+
+Compile plots into single figure and save
+```{r}
+gluc_response <- cowplot::plot_grid(Mcap.met, Mcap.cat, Mcap.resp, align = "vh", ncol = 3)
+ggsave("../Huffmyer_Mcap_gluc_genes.pdf", gluc_response, width=21, height=7.5)
+```

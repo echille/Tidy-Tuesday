@@ -45,25 +45,47 @@ Try to make dendrogram. See how it turns out
 villager_dend_data <- as.matrix(villagers)
 
 #plot(flashClust(dist(villager_dend_data), method = "average"))
-plot(hclust(dist(villager_dend_data)))
+#plot(hclust(dist(villager_dend_data)))
 ```
 
 Customize dendrogram
 ```{r}
-villager_dend_data %>% 
+# villager_dend_data %>% 
+#   dist() %>% 
+#   hclust() %>% 
+#   as.dendrogram() -> dend
+# 
+# n <- 40
+# qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
+# col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+# 
+# pdf(file="figures/Animal_crossing_tree.pdf", height = 55, width = 30)
+# dend %>%
+#   set("labels_col", value = col_vector, k=40) %>%
+#   #set("branches_k_color", value = col_vector, k=20) %>%
+#   plot(horiz=TRUE, axes=FALSE)
+# abline(v = 350, lty = 2)
+# dev.off()
+```
+
+Now just do tree with personality
+```{r}
+villager_dend_data[,c(3)] %>% 
   dist() %>% 
   hclust() %>% 
   as.dendrogram() -> dend
 
-n <- 40
+#Make palaette of 8 colors with RColorBrewer
+n <- 8
 qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
 col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
 
-pdf(file="/Users/erinchille/Desktop/Animal_crossing_tree.pdf", height = 55, width = 30)
+#Make dendogram pretty
+pdf(file="figures/Animal_crossing_personality_tree.pdf", height = 55, width = 30)
 dend %>%
-  set("labels_col", value = col_vector, k=40) %>%
-  #set("branches_k_color", value = col_vector, k=20) %>%
+  set("labels_col", value = col_vector, k=8) %>%
   plot(horiz=TRUE, axes=FALSE)
 abline(v = 350, lty = 2)
 dev.off()
 ```
+
