@@ -1,8 +1,9 @@
 ---
-title: "Symbiosis Biomarker Expression"
+title: 'Tidy Tuesday: Symbiosis Biomarker Expression During Coral Development'
 author: "Erin Chille"
-date: "Last updated: 2020/11/09"
-output: html_document
+date: 'Last updated: 2020/11/13'
+output:
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -22,15 +23,14 @@ library("ggpubr")
 library("DESeq2")
 ```
 
-
-Load sample Information
+Load sample metadata
 ```{r}
-sample.info <- read.csv(file="Sample_Info/RNAseq_data.csv", header=T, sep=",") #load sample info
+sample.info <- read.csv(file="https://raw.githubusercontent.com/echille/Mcapitata_Developmental_Gene_Expression_Timeseries/master/Sample_Info/RNAseq_data.csv", header=T, sep=",") #load sample info
 ```
 
-Load gene count Information
+Load gene count information
 ```{r}
-counts <- as.data.frame(read.csv("1-QC-Align-Assemble/Output/gene_count_matrix.csv", row.names="gene_id"), colClasses = double) #Load normalized expression matrix from stringtie
+counts <- as.data.frame(read.csv("https://raw.githubusercontent.com/echille/Mcapitata_Developmental_Gene_Expression_Timeseries/master/1-QC-Align-Assemble/Output/gene_count_matrix.csv", row.names="gene_id"), colClasses = double) #Load normalized expression matrix from stringtie
 ```
 
 
@@ -63,48 +63,56 @@ gdds_dev <- DESeqDataSetFromMatrix(countData = gcount_dev,
 ```
 
 #### Log-transform the count data
-First we are going to log-transform the data using a variance stabilizing transforamtion (VST). This is only for visualization purposes. Essentially, this is roughly similar to putting the data on the log2 scale. It will deal with the sampling variability of low counts by calculating within-group variability (if blind=FALSE). Importantly, it does not use the design to remove variation in the data, and so can be used to examine if there may be any variability do to technical factors such as extraction batch effects.
+First we are going to log-transform the data using a variance stabilizing transforamtion (VST). This is only for visualization purposes. Essentially, this is roughly similar to putting the data on the log2 scale. It will deal with the sampling variability of low counts by calculating within-group variability (if blind=FALSE). Importantly, it does not use the design to remove variation in the data, and so can be used to examine if there may be any variability due to technical, factors such as extraction batch effects.
 
 To do this we first need to calculate the size factors of our samples. This is a rough estimate of how many reads each sample contains compared to the others. In order to use VST (the faster log2 transforming process) to log-transform our data, the size factors need to be less than 4. Otherwise, there could be artefacts in our results.
 ```{r}
-SF.gdds_dev <- estimateSizeFactors(gdds_dev) #estimate size factors to determine if we can use vst  to transform our data. Size factors should be less than for to use vst
+SF.gdds_dev <- estimateSizeFactors(gdds_dev) #estimate size factors to determine if we can use vst  to transform our data. Size factors should be less than four to use vst
 print(sizeFactors(SF.gdds_dev)) #View size factors
 ```
 
-Our size factors are all less than 4, so we can use VST!
+Our size factors are all less than 4, so we can transform using VST!
 ```{r}
-gvst_dev <- vst(gdds_dev, blind=FALSE) #apply a variance stabilizing transforamtion to minimize effects of small counts and normalize wrt library size
-head(assay(gvst_dev), 3) #view transformed gene count data
+gvst_dev <- vst(gdds_dev, blind=FALSE) #apply a variance stabilizing transformation to minimize effects of small counts and normalize wrt library size
 ```
 
+## Find symbiosis biomarkers
 
-## Searched GFF annot for genes associated with zooxanthellae and with glucose biosynthesis
+I searched the [annotation file](https://github.com/echille/Mcapitata_Developmental_Gene_Expression_Timeseries/blob/master/0-BLAST-GO-KO/Output/200824_Mcap_Blast_GO_KO.tsv) for GO terms associated with the coral-zooxanthella relationship.  
 
-Find orthologues of biomarkers within Mcap genome
+I specifically searched for the GO terms:  
+
+- reduction of food intake in response to dietary excess [GO:0002023]... 1 occurrence  
+- response to glucose [GO:0009749]... 1 occurrence  
+- glucose catabolic process [GO:0006007]... 2 occurrences  
+- glucose metabolic process [GO:0006006]... 4 occurrences  
+- sphingosine biosynthetic process [GO:0046512]... 38 occurrences  
+- carbohydrate metabolic process [GO:0005975]... 201 occurrences  
+- transmembrane transport [GO:0055085]... 645 occurrences  
+
+For simplicity of expression plots, only "response to glucose", "glucose catabolic process", and "glucose metabolic process" will be plotted. Interestingly, the one occurrence of "reduction of food intake in response to dietary excess" was the same gene with the functional annotation, "response to glucose".
+
+## Create a dataframe containing the mean counts of your target genes
+
+First, make a dataframe containing our target genes and their associated GO term
 ```{r}
-#Genes associated with glucose metabolism (GO terms) “glucose metabolic process”
-#met <- c("adi2mcaRNA23963_R0", "g24226", "g27646", "g30302")
-
-#Glucose catabolic process
-#cat <- ("adi2mcaRNA32619_R0", "g64471")
-
-#Response to glucose
-#gluc <- c("g16598")
-
 targets <- data.frame(
   association = c("glucose_metabolism", "glucose_metabolism", "glucose_metabolism", "glucose_metabolism", "glucose_catabolism", "glucose_catabolism", "response_to_glucose"),
   gene_id = c("adi2mcaRNA23963_R0", "g24226", "g27646", "g30302", "adi2mcaRNA32619_R0", "g64471", "g16598")
 )
 ```
 
-Subset results for genes of interest
+Then, subset results for genes of interest
 ```{r}
 countsx <- as.data.frame(assay(gvst_dev))
 gene.counts <- countsx[(row.names(countsx) %in% targets$gene_id), ]
 #str(gene.counts)
 gene.counts$gene_id <- row.names(gene.counts) 
 gene.counts <- merge(gene.counts, targets, by="gene_id")
+```
 
+Calculate the mean and standard error of expression at each timepoint. To do this, we have to transform the table to a "long" version.
+```{r}
 gene.counts.long <- pivot_longer(gene.counts, 2:25, values_to = "exp")
   #gather(gene.counts, group, exp, X1101:X375, factor_key=TRUE) 
 colnames(gene.counts.long)[3] <- "sample_id"
@@ -123,17 +131,11 @@ mean.counts$time_point <- factor(mean.counts$time_point,
 mean.counts <- merge(mean.counts, targets, by= "gene_id")
 ```
 
-```{r}
-met.counts <- subset(mean.counts, association =="glucose_metabolism")
-cat.counts <- subset(mean.counts, association =="glucose_catabolism")
-resp.counts <- subset(mean.counts, association =="response_to_glucose")
-```
-
 ## Plot expression
 
 Glucose metabolism
 ```{r}
-Mcap.met <- ggplot(met.counts, aes(x=time_point, y=mean, group=gene_id)) + 
+Mcap.met <- mean.counts %>% subset(association =="glucose_metabolism") %>% ggplot(aes(x=time_point, y=mean, group=gene_id)) + 
   geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.1) +
   geom_line(aes(shape=gene_id), lty="dashed", color = "darkgrey") +
   geom_point(aes(shape=gene_id), size = 2, ) +
@@ -164,7 +166,7 @@ Mcap.met
 
 Glucose catabolism
 ```{r}
-Mcap.cat <- ggplot(cat.counts, aes(x=time_point, y=mean, group=gene_id)) + 
+Mcap.cat <- mean.counts %>% subset(association =="glucose_catabolism") %>% ggplot(aes(x=time_point, y=mean, group=gene_id)) + 
   geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.1) +
   geom_line(aes(shape=gene_id), lty="dashed", color = "darkgrey") +
   geom_point(aes(shape=gene_id), size = 2, ) +
@@ -192,9 +194,9 @@ Mcap.cat <- ggplot(cat.counts, aes(x=time_point, y=mean, group=gene_id)) +
                                   hjust = 0))
 Mcap.cat
 ```
-Response to glucose
+Response to glucose/reduction of food intake in response to dietary excess
 ```{r}
-Mcap.resp <- ggplot(resp.counts, aes(x=time_point, y=mean, group=gene_id)) + 
+Mcap.resp <- mean.counts %>% subset(association =="response_to_glucose") %>% ggplot(aes(x=time_point, y=mean, group=gene_id)) + 
   geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.1) +
   geom_line(aes(shape=gene_id), lty="dashed", color = "darkgrey") +
   geom_point(aes(shape=gene_id), size = 2, ) +
@@ -226,5 +228,5 @@ Mcap.resp
 Compile plots into single figure and save
 ```{r}
 gluc_response <- cowplot::plot_grid(Mcap.met, Mcap.cat, Mcap.resp, align = "vh", ncol = 3)
-ggsave("../Huffmyer_Mcap_gluc_genes.pdf", gluc_response, width=21, height=7.5)
+ggsave("figures/2020-11-10-Symbiosis-biomarker-expression.pdf", gluc_response, width=21, height=7.5)
 ```
